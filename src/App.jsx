@@ -18,6 +18,8 @@ import {
   Copy,
   Check,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   BadgeCheck,
 } from "lucide-react";
 
@@ -78,7 +80,8 @@ TONE: professional, decisive, authoritative like a $500/hr consultant, bold head
    fetch رو به اندپوینت بک‌اند خودت (که کلید AvalAI رو نگه می‌داره) تغییر بدی؛
    بقیه اپ بدون تغییر کار می‌کنه.
 =========================================================================== */
-async function askClaude(system, user, apiKey, model = "gpt-4o") {
+async function askClaude(system, user, apiKey, model) {
+  const safeModel = (model && model.trim()) || "gpt-4o";
   if (apiKey) {
     const res = await fetch("https://api.avalai.ir/v1/chat/completions", {
       method: "POST",
@@ -87,15 +90,24 @@ async function askClaude(system, user, apiKey, model = "gpt-4o") {
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model,
+        model: safeModel,
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
         ],
       }),
     });
-    if (!res.ok) throw new Error("خطا در ارتباط با AvalAI — کلید یا مدل رو چک کن");
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (e) {
+      throw new Error("پاسخ AvalAI قابل خواندن نبود (JSON نامعتبر).");
+    }
+    if (!res.ok) {
+      const msg =
+        data?.error?.message || data?.detail || data?.message || `خطای AvalAI (کد ${res.status})`;
+      throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    }
     return data.choices?.[0]?.message?.content || "";
   }
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -274,48 +286,78 @@ function ErrorNote({ message }) {
 
 /* ============================== TOP BAR (workspace) ============================== */
 function TopBar({ workspace, setWorkspace }) {
+  const [open, setOpen] = useState(!workspace.niche);
+
+  if (!open) {
+    return (
+      <Panel
+        className="p-3 mb-6 flex items-center gap-3 cursor-pointer"
+        style={{ backdropFilter: "blur(10px)" }}
+        onClick={() => setOpen(true)}
+      >
+        <Aperture size={16} color={C.brass} strokeWidth={1.8} />
+        <span className="text-sm" style={{ color: C.ivory }}>
+          {workspace.niche || "فضای کاری"}
+        </span>
+        {workspace.brand && (
+          <span className="text-xs" style={{ color: C.muted }}>
+            · {workspace.brand}
+          </span>
+        )}
+        <div className="flex items-center gap-1 mr-auto">
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.teal, boxShadow: `0 0 8px ${C.teal}` }} />
+          <span className="text-[11px]" style={{ color: C.muted, fontFamily: FONT_MONO }}>
+            {workspace.avalKey ? "AvalAI" : "Claude"}
+          </span>
+          <ChevronDown size={16} color={C.muted} />
+        </div>
+      </Panel>
+    );
+  }
+
   return (
-    <Panel className="p-4 mb-6 flex flex-wrap items-center gap-4" style={{ backdropFilter: "blur(10px)" }}>
-      <div className="flex items-center gap-2">
-        <Aperture size={18} color={C.brass} strokeWidth={1.8} />
-        <span className="text-xs" style={{ color: C.muted }}>
-          فضای کاری
-        </span>
+    <Panel className="p-4 mb-6" style={{ backdropFilter: "blur(10px)" }}>
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Aperture size={18} color={C.brass} strokeWidth={1.8} />
+          <span className="text-xs" style={{ color: C.muted }}>
+            فضای کاری
+          </span>
+        </div>
+        <input
+          value={workspace.niche}
+          onChange={(e) => setWorkspace({ ...workspace, niche: e.target.value })}
+          placeholder="حوزه کسب‌وکار (مثلا: فروش عینک زنانه)"
+          className="flex-1 min-w-[220px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
+          style={{ border: `1px solid ${C.line}`, color: C.ivory }}
+        />
+        <input
+          value={workspace.brand}
+          onChange={(e) => setWorkspace({ ...workspace, brand: e.target.value })}
+          placeholder="نام برند (اختیاری)"
+          className="flex-1 min-w-[160px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
+          style={{ border: `1px solid ${C.line}`, color: C.ivory }}
+        />
+        <input
+          value={workspace.avalKey}
+          onChange={(e) => setWorkspace({ ...workspace, avalKey: e.target.value })}
+          placeholder="کلید AvalAI (روی همین گوشی ذخیره می‌شه)"
+          type="password"
+          className="flex-1 min-w-[220px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
+          style={{ border: `1px solid ${C.line}`, color: C.ivory }}
+        />
+        <input
+          value={workspace.avalModel}
+          onChange={(e) => setWorkspace({ ...workspace, avalModel: e.target.value })}
+          placeholder="مدل (مثلا gpt-4o)"
+          className="w-32 bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
+          style={{ border: `1px solid ${C.line}`, color: C.ivory }}
+        />
       </div>
-      <input
-        value={workspace.niche}
-        onChange={(e) => setWorkspace({ ...workspace, niche: e.target.value })}
-        placeholder="حوزه کسب‌وکار (مثلا: فروش عینک زنانه)"
-        className="flex-1 min-w-[220px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
-        style={{ border: `1px solid ${C.line}`, color: C.ivory }}
-      />
-      <input
-        value={workspace.brand}
-        onChange={(e) => setWorkspace({ ...workspace, brand: e.target.value })}
-        placeholder="نام برند (اختیاری)"
-        className="flex-1 min-w-[160px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
-        style={{ border: `1px solid ${C.line}`, color: C.ivory }}
-      />
-      <input
-        value={workspace.avalKey}
-        onChange={(e) => setWorkspace({ ...workspace, avalKey: e.target.value })}
-        placeholder="کلید AvalAI (فقط در همین جلسه، جایی ذخیره نمی‌شه)"
-        type="password"
-        className="flex-1 min-w-[220px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
-        style={{ border: `1px solid ${C.line}`, color: C.ivory }}
-      />
-      <input
-        value={workspace.avalModel}
-        onChange={(e) => setWorkspace({ ...workspace, avalModel: e.target.value })}
-        placeholder="مدل (مثلا gpt-4o)"
-        className="w-32 bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
-        style={{ border: `1px solid ${C.line}`, color: C.ivory }}
-      />
-      <div className="flex items-center gap-1 mr-auto">
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.teal, boxShadow: `0 0 8px ${C.teal}` }} />
-        <span className="text-[11px]" style={{ color: C.muted, fontFamily: FONT_MONO }}>
-          {workspace.avalKey ? "AvalAI" : "Claude"}
-        </span>
+      <div className="flex justify-end mt-3">
+        <PrimaryButton onClick={() => setOpen(false)} icon={ChevronUp}>
+          تایید
+        </PrimaryButton>
       </div>
     </Panel>
   );
@@ -426,7 +468,7 @@ function IdeasEngine({ workspace }) {
       </PrimaryButton>
       <ErrorNote message={error} />
       <div className="grid gap-3 mt-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-        {ideas &&
+        {Array.isArray(ideas) &&
           ideas.map((it, i) => (
             <Panel key={i} className="p-4">
               <div className="flex items-center justify-between mb-2">
@@ -656,7 +698,7 @@ function Trends({ workspace }) {
       </PrimaryButton>
       <ErrorNote message={error} />
       <div className="mt-5 space-y-3">
-        {items &&
+        {Array.isArray(items) &&
           items.map((it, i) => (
             <Panel key={i} className="p-4 flex items-start gap-4">
               <div className="text-2xl font-semibold flex-shrink-0" style={{ color: C.brass, fontFamily: FONT_MONO }}>
@@ -934,7 +976,19 @@ const NAV = [
 export default function App() {
   useGoogleFonts();
   const [tab, setTab] = useState("dashboard");
-  const [workspace, setWorkspace] = useState({ niche: "", brand: "", avalKey: "", avalModel: "gpt-4o" });
+  const [workspace, setWorkspace] = useState(() => {
+    try {
+      const saved = localStorage.getItem("eynak_workspace");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { niche: "", brand: "", avalKey: "", avalModel: "gpt-4o" };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("eynak_workspace", JSON.stringify(workspace));
+    } catch (e) {}
+  }, [workspace]);
 
   return (
     <div dir="rtl" style={{ background: C.ink, minHeight: "100vh", fontFamily: FONT_HEAD, color: C.ivory }}>

@@ -150,7 +150,7 @@ function extractJSON(raw) {
 }
 
 /* ============================== PRIMITIVES ============================== */
-function Panel({ children, style, className = "" }) {
+function Panel({ children, style, className = "", ...rest }) {
   return (
     <div
       className={`rounded-2xl ${className}`}
@@ -159,6 +159,7 @@ function Panel({ children, style, className = "" }) {
         border: `1px solid ${C.line}`,
         ...style,
       }}
+      {...rest}
     >
       {children}
     </div>

@@ -129,6 +129,31 @@ async function askClaude(system, user, apiKey, model) {
   return text;
 }
 
+/* ============================== PERPLEXITY (LIVE WEB DATA) ============================== */
+async function askPerplexity(query, apiKey) {
+  const res = await fetch("https://api.perplexity.ai/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "sonar",
+      messages: [{ role: "user", content: query }],
+    }),
+  });
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error("پاسخ Perplexity قابل خواندن نبود.");
+  }
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `خطای Perplexity (کد ${res.status})`);
+  }
+  return data.choices?.[0]?.message?.content || "";
+}
+
 function extractJSON(raw) {
   let cleaned = raw.trim().replace(/```json|```/g, "").trim();
   try {
@@ -352,6 +377,14 @@ function TopBar({ workspace, setWorkspace }) {
           onChange={(e) => setWorkspace({ ...workspace, avalModel: e.target.value })}
           placeholder="مدل (مثلا gpt-4o)"
           className="w-32 bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
+          style={{ border: `1px solid ${C.line}`, color: C.ivory }}
+        />
+        <input
+          value={workspace.perplexityKey}
+          onChange={(e) => setWorkspace({ ...workspace, perplexityKey: e.target.value })}
+          placeholder="کلید Perplexity (برای داده زنده روند و اخبار الگوریتم)"
+          type="password"
+          className="flex-1 min-w-[220px] bg-transparent outline-none text-sm py-1.5 px-3 rounded-lg"
           style={{ border: `1px solid ${C.line}`, color: C.ivory }}
         />
       </div>
@@ -664,6 +697,7 @@ function Trends({ workspace }) {
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [liveSource, setLiveSource] = useState(false);
 
   const generate = async () => {
     if (!workspace.niche.trim()) {
@@ -673,9 +707,26 @@ function Trends({ workspace }) {
     setLoading(true);
     setError("");
     try {
+      let liveContext = "";
+      let usedLive = false;
+      if (workspace.perplexityKey) {
+        try {
+          liveContext = await askPerplexity(
+            `Latest Instagram Algorithm changes in 2026, plus the top 10 currently viral Reels/posts patterns in the "${workspace.niche}" niche. List concrete examples and hooks.`,
+            workspace.perplexityKey
+          );
+          usedLive = true;
+        } catch (e) {
+          liveContext = "";
+          setError(`Perplexity در دسترس نبود (${e.message})، با دانش عمومی ادامه داده شد.`);
+        }
+      }
+      setLiveSource(usedLive);
       const system =
-        "تو تحلیل‌گر ترند اینستاگرام هستی. بر اساس دانش عمومی از الگوهای ویروسی رایج در این حوزه تحلیل کن، نه داده لحظه‌ای اسکرپ‌شده. فقط آرایه JSON خالص برگردون.";
-      const user = `حوزه: ${workspace.niche}. ۵ الگوی محتوایی ویروسی رایج در این حوزه رو توصیف کن. فرمت:
+        "تو تحلیل‌گر ترند اینستاگرام هستی. اگه داده‌ی زنده از اینترنت داده شده، اون رو مبنا قرار بده؛ در غیر این‌صورت بر پایه‌ی دانش عمومی از الگوهای ویروسی رایج تحلیل کن. فقط آرایه JSON خالص برگردون.";
+      const user = `حوزه: ${workspace.niche}.
+${liveContext ? `داده زنده اینترنتی امروز:\n${liveContext}\n` : ""}
+۵ الگوی محتوایی ویروسی رایج در این حوزه رو توصیف کن. فرمت:
 [{"pattern":"اسم کوتاه الگو", "why":"چرا جواب میده (حداکثر ۱۲ کلمه)", "howTo":"چطور برای این برند پیاده‌اش کنیم (حداکثر ۱۴ کلمه)"}]`;
       const raw = await askClaude(system, user, workspace.avalKey, workspace.avalModel);
       const parsed = extractJSON(raw);
@@ -692,11 +743,14 @@ function Trends({ workspace }) {
     <div>
       <SectionHeader
         title="تحلیل روند و رقبا"
-        desc="الگوهای محتوایی که این روزها در حوزه‌ی تو خوب کار می‌کنن — تحلیل هوش مصنوعی بر پایه‌ی الگوهای شناخته‌شده، نه داده زنده‌ی اسکرپ‌شده."
+        desc="الگوهای محتوایی که این روزها در حوزه‌ی تو خوب کار می‌کنن. با کلید Perplexity، داده‌ی زنده اینترنتی هم به تحلیل اضافه میشه."
       />
-      <PrimaryButton onClick={generate} loading={loading} icon={TrendingUp}>
-        تحلیل الگوهای امروز
-      </PrimaryButton>
+      <div className="flex items-center gap-3 mb-3">
+        <PrimaryButton onClick={generate} loading={loading} icon={TrendingUp}>
+          تحلیل الگوهای امروز
+        </PrimaryButton>
+        {items && <Chip tone={liveSource ? "teal" : "muted"}>{liveSource ? "منبع: زنده (Perplexity)" : "منبع: دانش عمومی AI"}</Chip>}
+      </div>
       <ErrorNote message={error} />
       <div className="mt-5 space-y-3">
         {Array.isArray(items) &&
@@ -731,11 +785,19 @@ function Advisor({ workspace }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [liveRules, setLiveRules] = useState("");
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  useEffect(() => {
+    if (!workspace.perplexityKey) return;
+    askPerplexity("Latest Instagram Algorithm changes in 2026 — concrete, actionable rule changes only.", workspace.perplexityKey)
+      .then(setLiveRules)
+      .catch(() => setLiveRules(""));
+  }, [workspace.perplexityKey]);
 
   const send = async () => {
     if (!input.trim() || loading) return;
@@ -746,7 +808,9 @@ function Advisor({ workspace }) {
     setLoading(true);
     setError("");
     try {
-      const system = `${ADVISOR_SYSTEM}\n\nCURRENT USER NICHE: ${workspace.niche || "آنلاین شاپ"}`;
+      const system = `${ADVISOR_SYSTEM}\n\nCURRENT USER NICHE: ${workspace.niche || "آنلاین شاپ"}${
+        liveRules ? `\n\n### LATEST INSTAGRAM ALGORITHM UPDATES (LIVE, VIA PERPLEXITY):\n${liveRules}` : ""
+      }`;
       const history = newMessages
         .map((m) => `${m.role === "user" ? "کاربر" : "مشاور"}: ${m.text}`)
         .join("\n");
@@ -762,6 +826,9 @@ function Advisor({ workspace }) {
   return (
     <div className="flex flex-col" style={{ height: "calc(100vh - 220px)", minHeight: 420 }}>
       <SectionHeader title="مشاور الگوریتم و فروش" desc="چت زنده با متخصص رشد اینستاگرام و بستن فروش." />
+      {workspace.perplexityKey && (
+        <Chip tone={liveRules ? "teal" : "muted"}>{liveRules ? "قوانین امروز الگوریتم: زنده" : "در حال دریافت قوانین زنده..."}</Chip>
+      )}
       <Panel className="flex-1 p-4 overflow-y-auto flex flex-col gap-3">
         {messages.map((m, i) => (
           <div key={i} className={`max-w-[80%] ${m.role === "user" ? "self-start" : "self-end"}`}>
@@ -977,12 +1044,13 @@ const NAV = [
 export default function App() {
   useGoogleFonts();
   const [tab, setTab] = useState("dashboard");
+  const DEFAULT_WORKSPACE = { niche: "", brand: "", avalKey: "", avalModel: "gpt-4o", perplexityKey: "" };
   const [workspace, setWorkspace] = useState(() => {
     try {
       const saved = localStorage.getItem("eynak_workspace");
-      if (saved) return JSON.parse(saved);
+      if (saved) return { ...DEFAULT_WORKSPACE, ...JSON.parse(saved) };
     } catch (e) {}
-    return { niche: "", brand: "", avalKey: "", avalModel: "gpt-4o" };
+    return DEFAULT_WORKSPACE;
   });
 
   useEffect(() => {
